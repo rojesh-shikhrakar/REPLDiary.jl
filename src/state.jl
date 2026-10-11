@@ -30,6 +30,7 @@ diaryfile() = isempty(STATE.file) ? abspath(DEFAULT_FILE) : STATE.file
 # `diary(:undo)` truncates the file at the newest range. Header/footer lines are
 # not undoable; writing one clears the stack.
 const UNDO_STACK = Tuple{Int,Int,Int}[]   # (start, stop, commands counted)
+const UNDO_LIMIT = 1000                   # how far back `diary(:undo, k)` can go
 
 """
     append_to_file(text; undoable=false, commands=0)
@@ -42,7 +43,12 @@ function append_to_file(text::AbstractString; undoable::Bool=false, commands::In
     mkpath(dirname(file))
     start = isfile(file) ? filesize(file) : 0
     open(io -> write(io, text), file, "a")
-    undoable ? push!(UNDO_STACK, (start, start + sizeof(text), commands)) : empty!(UNDO_STACK)
+    if undoable
+        push!(UNDO_STACK, (start, start + sizeof(text), commands))
+        length(UNDO_STACK) > UNDO_LIMIT && popfirst!(UNDO_STACK)   # keep memory bounded
+    else
+        empty!(UNDO_STACK)
+    end
     return nothing
 end
 

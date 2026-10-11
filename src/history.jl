@@ -20,8 +20,8 @@ function repl_history()
     if first(history) isa AbstractString
         # Julia < 1.13: parallel vectors of texts and modes.
         modes = repl.interface.modes[1].hist.modes
-        return [(m, String(t)) for (m, t) in zip(modes, history)]
+        return [(m, t) for (m, t) in zip(modes, history)]
     end
     # Julia >= 1.13: a vector of `HistEntry`.
-    return [(e.mode, String(e.content)) for e in history]
+    return [(e.mode, e.content) for e in history]
 end

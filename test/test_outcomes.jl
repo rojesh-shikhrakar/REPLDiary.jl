@@ -58,16 +58,16 @@
     @testset "outcomes are remembered for diary(n)" begin
         with_diary_dir() do _
             D.submit!("", "good()"); D.resolve_pending!(true)       # no REPL: history index is 0
-            @test D.OUTCOMES[0] == ("good()", true)
+            @test D.OUTCOMES[0] == (hash("good()"), true)
             D.submit!("", "bad()");  D.resolve_pending!(false)
-            @test D.OUTCOMES[0] == ("bad()", false)                  # latest outcome wins
+            @test D.OUTCOMES[0] == (hash("bad()"), false)                  # latest outcome wins
         end
     end
 
     @testset "succeeded_or_unknown" begin
         with_diary_dir() do _
-            D.OUTCOMES[2] = ("bad()", false)
-            D.OUTCOMES[3] = ("good()", true)
+            D.remember_outcome!(2, "bad()", false)
+            D.remember_outcome!(3, "good()", true)
             @test !D.succeeded_or_unknown(2, "bad()")
             @test D.succeeded_or_unknown(3, "good()")
             @test D.succeeded_or_unknown(4, "never seen")            # unknown: keep
@@ -90,5 +90,29 @@
             D.flush_pending_at_exit()                                # nothing pending: harmless
             diary(:off)
         end
+    end
+end
+
+@testset "outcome memory stays bounded" begin
+    with_diary_dir() do _
+        for i in 1:(2 * D.OUTCOMES_KEEP + 5)
+            D.remember_outcome!(i, "cmd $i", true)
+        end
+        @test length(D.OUTCOMES) <= D.OUTCOMES_KEEP + 5     # pruned to the newest entries
+        @test haskey(D.OUTCOMES, 2 * D.OUTCOMES_KEEP + 5)   # newest kept
+        @test !haskey(D.OUTCOMES, 1)                        # oldest dropped
+        @test all(v -> v[1] isa UInt64, values(D.OUTCOMES)) # no command text retained
+    end
+end
+
+@testset "undo stack stays bounded" begin
+    with_diary_dir() do _
+        diary("u")
+        for i in 1:(D.UNDO_LIMIT + 50)
+            D.record("", "x$i = $i")
+        end
+        @test length(D.UNDO_STACK) == D.UNDO_LIMIT
+        @test D.undo!(1) == 1                                # the newest is still undoable
+        diary(:off)
     end
 end

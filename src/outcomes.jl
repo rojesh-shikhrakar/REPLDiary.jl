@@ -49,7 +49,19 @@ const PENDING = Ref{Union{Pending,Nothing}}(nothing)
 
 # History position => (text, succeeded). Lets `diary(n)` skip failed commands
 # that are still in the REPL history. The text guards against shifted positions.
-const OUTCOMES = Dict{Int,Tuple{String,Bool}}()
+# Only a hash of the text is kept (the REPL history already holds the text), and
+# the oldest entries are pruned, so a long session cannot grow this without bound.
+const OUTCOMES = Dict{Int,Tuple{UInt64,Bool}}()
+const OUTCOMES_KEEP = 10_000          # newest history positions kept when pruning
+
+function remember_outcome!(index::Integer, text::AbstractString, succeeded::Bool)
+    OUTCOMES[index] = (hash(text), succeeded)
+    if length(OUTCOMES) > 2 * OUTCOMES_KEEP
+        newest = maximum(keys(OUTCOMES))
+        filter!(kv -> kv.first > newest - OUTCOMES_KEEP, OUTCOMES)
+    end
+    return
+end
 
 "A line was submitted at the prompt; wait for its outcome."
 function submit!(label::AbstractString, text::AbstractString)
@@ -67,7 +79,7 @@ function resolve_pending!(outcome::Outcome)
         p
     end
     pending === nothing && return
-    OUTCOMES[pending.history_index] = (pending.text, outcome.succeeded)
+    remember_outcome!(pending.history_index, pending.text, outcome.succeeded)
     record(pending.label, pending.text, outcome)
     return
 end
@@ -84,7 +96,7 @@ end
 "`true` unless the command at history `index` (with this `text`) is known to have failed."
 function succeeded_or_unknown(index::Integer, text::AbstractString)
     outcome = get(OUTCOMES, index, nothing)
-    return outcome === nothing || outcome[1] != text || outcome[2]
+    return outcome === nothing || outcome[1] != hash(text) || outcome[2]
 end
 
 # `exit()` never returns, so it never gets an outcome. Nothing else can still be

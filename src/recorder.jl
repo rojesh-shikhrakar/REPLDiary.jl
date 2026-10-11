@@ -74,9 +74,15 @@ file (default: the REPL history, read only when `n > 0`), ignoring `diary(...)` 
 function write_last(n::Integer, entries=nothing)
     n > 0 || return
     entries === nothing && (entries = repl_history())
-    commands = [(m, t) for (i, (m, t)) in enumerate(entries)
-                if !is_diary_call(mode_label(m), t) && succeeded_or_unknown(i, t) && should_record(m, t)]
-    commands = commands[max(1, length(commands) - n + 1):end]
+    # Scan from the newest entry and stop after `n` hits: history can be huge.
+    commands = Tuple{Symbol,String}[]
+    for i in length(entries):-1:1
+        m, t = entries[i]
+        (is_diary_call(mode_label(m), t) || !succeeded_or_unknown(i, t) || !should_record(m, t)) && continue
+        push!(commands, (m, t))
+        length(commands) == n && break
+    end
+    reverse!(commands)
     body = join(format_entry(mode_label(m), prepare_text(t)) for (m, t) in commands)  # blanks give ""
     isempty(body) && return
     count = length(commands)

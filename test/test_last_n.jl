@@ -33,8 +33,8 @@
         with_diary_dir() do dir
             D.STATE.file = joinpath(dir, "w.jl")
             h = [(:julia, "a = 1"), (:julia, "bad()"), (:julia, "b = 2")]
-            D.OUTCOMES[2] = ("bad()", false)
-            D.OUTCOMES[1] = ("something else", false)                 # text mismatch: ignored
+            D.remember_outcome!(2, "bad()", false)
+            D.remember_outcome!(1, "something else", false)                 # text mismatch: ignored
             D.write_last(3, h)
             @test read_file("w.jl") == "# ── last 2 commands ──\na = 1\nb = 2\n"
         end
