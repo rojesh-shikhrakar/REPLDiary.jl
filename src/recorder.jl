@@ -65,14 +65,15 @@ function record(label::AbstractString, text::AbstractString, outcome::Outcome=Ou
 end
 
 """
-    write_last(n, entries=repl_history())
+    write_last(n, entries=nothing)
 
 Append the last `n` of `entries` (`(mode, text)` pairs, oldest first) to the diary
-file, ignoring `diary(...)` calls, commands known to have failed, and anything the
+file (default: the REPL history, read only when `n > 0`), ignoring `diary(...)` calls, commands known to have failed, and anything the
 `modes`/`exclude` options filter out. Works whether or not recording is on.
 """
-function write_last(n::Integer, entries=repl_history())
+function write_last(n::Integer, entries=nothing)
     n > 0 || return
+    entries === nothing && (entries = repl_history())
     commands = [(m, t) for (i, (m, t)) in enumerate(entries)
                 if !is_diary_call(mode_label(m), t) && succeeded_or_unknown(i, t) && should_record(m, t)]
     commands = commands[max(1, length(commands) - n + 1):end]

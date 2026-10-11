@@ -47,12 +47,14 @@ const SECRET_PATTERNS = [
     r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}",
 ]
 
-# `password = "hunter2"`, `api_key="…"`, `token: '…'`: keep the name, mask the value.
+# `password = "hunter2"`, `github_token="…"`, `token: '…'`: keep the name, mask the value.
+# The name may have a prefix and suffix around the keyword. `auth` must stand alone
+# (`auth`, `auth_header`) so that words like `author` are not masked.
 const SECRET_ASSIGNMENT =
-    r"""(?i)\b(pass(?:word|wd)?|secret|token|api[_-]?key|auth)(\w*\s*[=:]\s*)(["'])(?:(?!\3).)*\3"""
+    r"""(?i)\b(\w*?(?:pass(?:word|wd)?|secret|token|api[_-]?key|auth(?![a-z]))\w*\s*[=:]\s*)(["'])(?:(?!\2).)*\2"""
 
 const REDACTED = "<redacted>"
-const SECRET_ASSIGNMENT_MASK = SubstitutionString("\\1\\2\\3$(REDACTED)\\3")   # keep name, separator, quote style
+const SECRET_ASSIGNMENT_MASK = SubstitutionString("\\1\\2$(REDACTED)\\2")   # keep name + separator, and the quote style
 
 "Mask recognisable secrets in `text`."
 function redact_secrets(text::AbstractString)

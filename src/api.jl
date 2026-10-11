@@ -94,6 +94,7 @@ function diary(arg::Union{AbstractString,Symbol}, n::Integer; kwargs...)
         report_undo(undo!(n))
         return nothing
     end
+    n >= 0 || throw(ArgumentError("number of commands must be non-negative, got $n"))  # before any side effect
     diary(arg; kwargs...)
     diary(n)
 end
