@@ -14,6 +14,7 @@ isdiary()             # recording?                          (MATLAB: get(0,'Diar
 diaryfile()           # absolute path of the diary file     (MATLAB: get(0,'DiaryFile'))
 diary(5)              # write the last 5 commands (excluding diary calls) to the file
 diary("s.jl", 5)      # start recording to s.jl, beginning with the last 5 commands
+diary(:undo)           # remove the last recorded command from the file (diary(:undo, 3) removes 3)
 diary("s.jl"; timestamps=true)   # add a `# HH:MM:SS` comment before each command
 ```
 
@@ -22,6 +23,12 @@ diary("s.jl"; timestamps=true)   # add a `# HH:MM:SS` comment before each comman
 - Julia input is written verbatim (multi-line input included); shell (`;`), help (`?`)
   and Pkg (`]`) input is written as comments (`# shell> ls`), so the file is a valid script.
 - While recording, the prompt shows a red circle (`🔴 julia>`); it disappears when the diary is off.
+- `diary(:status)` prints whether the diary is on, the file, how many commands were recorded or
+  skipped this session, and the options.
+- `output=true` also writes the result the REPL displays (`# 3`, `# 2-element Vector{Int64}: ...`) under
+  each Julia command, except for commands ending in `;`. Text printed with `println` is not captured.
+- `errors=:comment` keeps failed commands as `# failed> cmd` plus `# ERROR: message` instead of dropping
+  them. Options stay in effect until changed, e.g. `diary(:on; output=false)`.
 - Commands that fail (an error, an interrupt, a syntax error) are not recorded, and `diary(n)` skips them too.
   Exceptions: Pkg-mode (`]`) commands are always recorded because Pkg handles its own errors, and a
   shell command that merely exits non-zero is not a Julia error. `diary(n)` can only know about

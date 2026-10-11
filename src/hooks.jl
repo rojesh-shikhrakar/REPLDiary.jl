@@ -96,7 +96,7 @@ function install_outcome_tap!()
                 # Resolve before forwarding: the REPL cannot move on until it
                 # receives the response, so the outcome is always known by then.
                 try
-                    resolve_pending!(!response.second)
+                    resolve_pending!(Outcome(response))
                 catch err
                     @warn "REPLDiary could not record a command" exception = err maxlog = 1
                 end

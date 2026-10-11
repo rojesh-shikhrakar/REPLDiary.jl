@@ -128,4 +128,127 @@ using REPLDiary
             end
         end
     end
+
+    @testset "output=true records displayed results" begin
+        mktempdir() do dir
+            cd(dir) do
+                diary("o"; output=true)
+                REPLDiary.record("", "1 + 2", REPLDiary.Outcome(true, 3, nothing))
+                REPLDiary.record("", "x = [1, 2]", REPLDiary.Outcome(true, [1, 2], nothing))
+                REPLDiary.record("", "y = 5;", REPLDiary.Outcome(true, 5, nothing))        # hidden by `;`
+                REPLDiary.record("", "nothing", REPLDiary.Outcome(true, nothing, nothing)) # no value
+                REPLDiary.record("shell>", "ls", REPLDiary.Outcome(true, 7, nothing))      # only Julia mode
+                diary(:off; output=false)
+                txt = read("o.jl", String)
+                @test occursin("1 + 2\n# 3\n", txt)
+                @test occursin("x = [1, 2]\n# 2-element Vector{Int64}:\n#  1\n#  2\n", txt)
+                @test occursin("y = 5;\n", txt) && !occursin("# 5", txt)
+                @test occursin("# shell> ls\n", txt) && !occursin("# 7", txt)
+                @test Meta.parseall(txt) isa Expr
+            end
+        end
+    end
+
+    @testset "errors=:comment keeps failed commands as comments" begin
+        mktempdir() do dir
+            cd(dir) do
+                @test_throws ArgumentError diary("e"; errors=:bogus)
+                diary("e"; errors=:comment)
+                REPLDiary.record("", "boom()", REPLDiary.Outcome(false, nothing, "UndefVarError: `boom` not defined"))
+                REPLDiary.record("", "1 +* 2", REPLDiary.Outcome(false))   # no details
+                diary(:off; errors=:skip)
+                txt = read("e.jl", String)
+                @test occursin("# failed> boom()\n# ERROR: UndefVarError: `boom` not defined\n", txt)
+                @test occursin("# failed> 1 +* 2\n# ERROR: the command could not be run\n", txt)
+                @test Meta.parseall(txt) isa Expr
+            end
+        end
+    end
+
+    @testset "Outcome from a backend response" begin
+        @test REPLDiary.Outcome(7 => false).value == 7
+        stack = [(exception=ErrorException("bad"), backtrace=nothing)]
+        o = REPLDiary.Outcome(stack => true)
+        @test !o.succeeded && o.error == "bad"
+    end
+
+    @testset "diary(:status)" begin
+        mktempdir() do dir
+            cd(dir) do
+                diary("s"; timestamps=false, output=false, errors=:skip)
+                REPLDiary.record("", "a = 1")
+                REPLDiary.record("", "bad()", REPLDiary.Outcome(false))
+                st = REPLDiary.diary_status()
+                @test st.recording && st.commands == 1 && st.skipped == 1
+                @test endswith(st.file, "s.jl")
+                out = sprint(REPLDiary.print_status)
+                @test occursin("Diary is ON", out) && occursin("1 recorded, 1 failed", out)
+                diary(:off)
+                @test !REPLDiary.diary_status().recording
+                diary(:on)                                  # a new session resets the counts
+                @test REPLDiary.diary_status().commands == 0
+                diary(:off)
+            end
+        end
+    end
+
+    @testset "diary(:undo)" begin
+        mktempdir() do dir
+            cd(dir) do
+                diary("u")
+                REPLDiary.record("", "keep = 1")
+                REPLDiary.record("", "oops = 2")
+                REPLDiary.record("", "oops = 3")
+                diary(:undo)
+                @test !occursin("oops = 3", read("u.jl", String))
+                @test occursin("oops = 2", read("u.jl", String))
+                diary(:undo, 5)                              # more than available: stops at the header
+                txt = read("u.jl", String)
+                @test occursin("diary started", txt) && !occursin("keep", txt)
+                @test REPLDiary.undo!() == 0                 # nothing left
+                REPLDiary.record("", "again = 4")
+                write("u.jl", read("u.jl", String) * "# edited elsewhere\n")
+                @test_logs (:warn, r"cannot undo") diary(:undo)   # file changed: refuse
+                @test occursin("again = 4", read("u.jl", String))
+                diary(:off)
+                @test_throws ArgumentError diary(:undo, -1)
+            end
+        end
+    end
+
+    @testset "filters: exclude, modes, redact" begin
+        @test REPLDiary.as_regexes("a.b(c)") == [r"a\.b\(c\)"] || occursin(REPLDiary.as_regexes("a.b(c)")[1], "a.b(c)")
+        @test !occursin(REPLDiary.as_regexes("a.b")[1], "axb")           # String is literal
+        @test_throws ArgumentError diary(modes=[:nope])
+        @test REPLDiary.STATE.modes == Symbol[]                          # bad option changed nothing
+
+        mktempdir() do dir
+            cd(dir) do
+                diary("flt"; exclude=[r"^using ", "hunter2"], modes=[:julia, :pkg], redact=true)
+                REPLDiary.record("", "using Foo")                        # excluded by pattern
+                REPLDiary.record("", "x = 1")
+                REPLDiary.record("", "login(\"bob\", \"hunter2\")")      # excluded by literal
+                REPLDiary.record("shell>", "ls")                         # mode not selected
+                REPLDiary.record("pkg>", "add A")
+                REPLDiary.record("", "api_key = \"abc123\"")             # redacted
+                REPLDiary.record("", "t = \"ghp_" * "a"^30 * "\"")        # redacted
+                diary(:off)
+                txt = read("flt.jl", String)
+                @test occursin("x = 1\n", txt) && occursin("# pkg> add A", txt)
+                @test !occursin("using Foo", txt) && !occursin("hunter2", txt) && !occursin("shell>", txt)
+                @test occursin("api_key = \"<redacted>\"", txt) && !occursin("abc123", txt)
+                @test occursin("t = \"<redacted>\"", txt)
+
+                # diary(n) honours the same filters
+                REPLDiary.STATE.file = joinpath(dir, "n2.jl")
+                empty!(REPLDiary.OUTCOMES)
+                REPLDiary.write_last(5, [(:julia, "using Foo"), (:shell, "ls"), (:julia, "y = 2"),
+                                         (:julia, "password = 'p'")])
+                @test read("n2.jl", String) == "# ── last 2 commands ──\ny = 2\npassword = '<redacted>'\n"
+
+                diary(exclude=[], modes=[], redact=false)                # reset
+                @test isempty(REPLDiary.STATE.exclude) && isempty(REPLDiary.STATE.modes) && !REPLDiary.STATE.redact
+            end
+        end
+    end
 end

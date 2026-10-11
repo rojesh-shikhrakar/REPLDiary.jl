@@ -12,6 +12,33 @@
 # Exception: Pkg mode runs its commands without the backend and handles its own
 # errors, so its outcome is unknowable. Pkg commands are always recorded.
 
+"""
+How a command went. `value` is the result of a successful command and `error` the
+message of a failed one (`nothing` when the REPL gave no details).
+"""
+struct Outcome
+    succeeded::Bool
+    value::Any
+    error::Union{String,Nothing}
+end
+Outcome(succeeded::Bool) = Outcome(succeeded, nothing, nothing)
+
+"""
+Turn the backend's `value => iserror` response into an `Outcome`. On failure the
+value is the exception stack; its last entry is the exception the REPL reports.
+"""
+function Outcome(response::Pair)
+    value, failed = response.first, response.second
+    failed || return Outcome(true, value, nothing)
+    message = try
+        exception = value isa AbstractVector && !isempty(value) ? value[end].exception : value
+        Base.invokelatest(sprint, showerror, exception)
+    catch
+        nothing
+    end
+    return Outcome(false, nothing, message)
+end
+
 mutable struct Pending
     label::String        # "" for Julia code, else the mode label ("shell>", …)
     text::String
@@ -31,15 +58,17 @@ function submit!(label::AbstractString, text::AbstractString)
 end
 
 "The backend reported how the pending command went."
-function resolve_pending!(succeeded::Bool)
+resolve_pending!(succeeded::Bool) = resolve_pending!(Outcome(succeeded))
+
+function resolve_pending!(outcome::Outcome)
     pending = @lock LOCK begin
         p = PENDING[]
         PENDING[] = nothing
         p
     end
     pending === nothing && return
-    OUTCOMES[pending.history_index] = (pending.text, succeeded)
-    succeeded && record(pending.label, pending.text)
+    OUTCOMES[pending.history_index] = (pending.text, outcome.succeeded)
+    record(pending.label, pending.text, outcome)
     return
 end
 

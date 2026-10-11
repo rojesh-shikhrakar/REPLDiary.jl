@@ -31,3 +31,41 @@ function format_entry(label::AbstractString, text::AbstractString; timestamp::Bo
     end
     return String(take!(io))
 end
+
+# ── results and errors as comments ──────────────────────────────────────────
+
+"Prefix every line of `text` with `# `, ending in a newline."
+comment_lines(text::AbstractString) =
+    join(("# " * line * "\n" for line in split(rstrip(text), '\n')))
+
+# `x = 1;` hides its value in the REPL; do the same.
+function hides_output(text::AbstractString)
+    try
+        return REPL.ends_with_semicolon(text)
+    catch
+        return endswith(rstrip(text), ';')
+    end
+end
+
+"""
+    format_result(text, value) -> String
+
+The value the REPL would display after the command `text`, as comment lines, or
+`""` when nothing is displayed (`nothing`, or a command ending in `;`). The value's
+`show` method is user code: it runs in the latest world and may not break recording.
+"""
+function format_result(text::AbstractString, value)
+    (value === nothing || hides_output(text)) && return ""
+    try
+        io = IOBuffer()
+        context = IOContext(io, :limit => true, :displaysize => (24, 80))
+        Base.invokelatest(show, context, MIME"text/plain"(), value)
+        shown = String(take!(io))
+        return isempty(strip(shown)) ? "" : comment_lines(shown)
+    catch
+        return ""
+    end
+end
+
+"The error as a comment line, e.g. `# ERROR: UndefVarError: ...`."
+format_error(message::AbstractString) = comment_lines("ERROR: " * message)

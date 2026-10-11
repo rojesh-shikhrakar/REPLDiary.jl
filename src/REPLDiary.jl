@@ -10,6 +10,8 @@ appended to a plain-text Julia file while the diary is on.
     diary(:off)           # stop recording
     diary("session.jl")   # set the file and start recording (MATLAB: `diary filename`)
     diary(5)              # write the last 5 commands to the diary file
+    diary(:status)        # show whether it is on, the file and the counts
+    diary("s.jl"; output=true, errors=:comment)   # also keep results and failed commands
     isdiary()             # is the diary on?          (MATLAB: get(0,'Diary'))
     diaryfile()           # absolute path of the file (MATLAB: get(0,'DiaryFile'))
 
@@ -29,6 +31,7 @@ instead reads the REPL's own history (`history.jl`) and skips known failures.
 |:------------- |:------------------------------------------------------- |
 | `state.jl`    | the global on/off state, file path and file appends     |
 | `format.jl`   | turning a command into diary-file text                  |
+| `filters.jl`  | which modes/commands are allowed; secret masking        |
 | `recorder.jl` | writing live commands and the last `n` history entries  |
 | `outcomes.jl` | holding a command until it is known to have succeeded   |
 | `history.jl`  | reading the REPL history across Julia versions          |
@@ -45,8 +48,9 @@ export diary, isdiary, diaryfile
 
 include("state.jl")
 include("format.jl")
-include("recorder.jl")
+include("filters.jl")
 include("outcomes.jl")
+include("recorder.jl")
 include("history.jl")
 include("hooks.jl")
 include("api.jl")
